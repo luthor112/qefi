@@ -1,0 +1,43 @@
+#!/bin/bash
+
+case "$1" in
+    setup)
+        sudo apt-get -y update
+        sudo apt-get -y install build-essential make git qemu-system-x86-64 ovmf mtools
+        git clone https://gitlab.com/bztsrc/posix-uefi.git ~/posix-uefi
+        ;;
+    new)
+        mkdir $2
+        ln -s ~/posix-uefi/uefi $2/uefi
+
+        echo "TARGET = $2.efi" > $2/Makefile
+        echo "include uefi/Makefile" >> $2/Makefile
+
+        echo '#include <uefi.h>' > $2/main.c
+        echo '' >> $2/main.c
+        echo 'int main (int argc, char **argv)' >> $2/main.c
+        echo '{' >> $2/main.c
+        echo '    printf("Hello, world!\n");' >> $2/main.c
+        echo '    return 0;' >> $2/main.c
+        echo '}' >> $2/main.c
+        ;;
+    build)
+        make
+        ;;
+    image)
+        dd if=/dev/zero of=uefi.img bs=512 count=93750
+        parted uefi.img -s -a minimal mklabel gpt
+        parted uefi.img -s -a minimal mkpart EFI FAT16 2048s 93716s
+        parted uefi.img -s -a minimal toggle 1 boot
+
+        dd if=/dev/zero of=part.img bs=512 count=91669
+        mformat -i part.img -h 32 -t 32 -n 64 -c 1
+        mcopy -i part.img *.efi ::
+
+        dd if=part.img of=uefi.img bs=512 count=91669 seek=2048 conv=notrunc
+        ;;
+    run)
+        sudo qemu-system-x86_64 -cpu qemu64 -drive if=pflash,format=raw,unit=0,file=/usr/share/OVMF/OVMF_CODE.fd,readonly=on -drive if=pflash,format=raw,unit=1,file=/usr/share/OVMF/OVMF_VARS.fd -net none -nographic -drive file=uefi.img,if=ide
+        ;;
+esac
+echo "Done."
