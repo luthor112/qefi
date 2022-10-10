@@ -2,11 +2,21 @@
 
 case "$1" in
     setup)
+        ;&
+    setup-posix)
         sudo apt-get -y update
         sudo apt-get -y install build-essential make git qemu-system-x86-64 ovmf mtools
         git clone https://gitlab.com/bztsrc/posix-uefi.git ~/posix-uefi
         ;;
+    setup-gnu)
+        sudo apt-get -y update
+        sudo apt-get -y install build-essential make git qemu-system-x86-64 ovmf mtools binutils
+        git clone https://git.code.sf.net/p/gnu-efi/code ~/gnu-efi
+        make -C ~/gnu-efi
+        ;;
     new)
+        ;&
+    new-posix)
         mkdir $2
         ln -s ~/posix-uefi/uefi $2/uefi
 
@@ -21,8 +31,29 @@ case "$1" in
         echo '    return 0;' >> $2/main.c
         echo '}' >> $2/main.c
         ;;
+    new-gnu)
+        mkdir $2
+        ln -s ~/gnu-efi $2/gnu-efi-dir
+
+        echo '#include <efi.h>' > $2/main.c
+        echo '#include <efilib.h>' >> $2/main.c
+        echo '' >> $2/main.c
+        echo 'EFI_STATUS EFIAPI efi_main (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)' >> $2/main.c
+        echo '{' >> $2/main.c
+        echo '  InitializeLib(ImageHandle, SystemTable);' >> $2/main.c
+        echo '  Print(L"Hello, world!\n");' >> $2/main.c
+        echo '  return EFI_SUCCESS;' >> $2/main.c
+        echo '}' >> $2/main.c
+        ;;
     build)
+        ;&
+    build-posix)
         make
+        ;;
+    build-gnu)
+        gcc -Ignu-efi-dir/inc -fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args -c main.c -o main.o
+        ld -shared -Bsymbolic -Lgnu-efi-dir/x86_64/lib -Lgnu-efi-dir/x86_64/gnuefi -Tgnu-efi-dir/gnuefi/elf_x86_64_efi.lds gnu-efi-dir/x86_64/gnuefi/crt0-efi-x86_64.o main.o -o main.so -lgnuefi -lefi
+        objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym  -j .rel -j .rela -j .rel.* -j .rela.* -j .reloc --target efi-app-x86_64 --subsystem=10 main.so main.efi
         ;;
     image)
         dd if=/dev/zero of=uefi.img bs=512 count=93750
